@@ -1,0 +1,143 @@
+function [times,flags,magnitudes,EROE_out] = computeManeuverTimes(OE,EROE,de_min,de_max,psi_min,psi_max,diy_min,diy_max,dlam_min,dlam_max,tf,cb,constants,dB,telem)
+% Init
+% a = OE(1);
+% e = OE(2);
+% i = OE(3);
+% Om = OE(4);
+% w = OE(5);
+% M = OE(6);
+% da = EROE(1);
+% dlam = EROE(2);
+% dex = EROE(3);
+% dey = EROE(4);
+% dix = EROE(5);
+% diy = EROE(6);
+
+t = 0;
+times = [];
+flags = [];
+magnitudes = [];
+EROE_out = EROE;
+while t < tf
+    EROE_prev = EROE;
+    OE_prev = OE;
+    [t_dlam, sign_dlam]= dlam_time(OE,EROE,dlam_min,dlam_max,cb);
+    [t_diy, sign_diy] = diy_time(OE,EROE,diy_min,diy_max,cb);
+    [t_de, sign_de] = de_time(OE,EROE,de_min,de_max,cb);
+    [t_psi, sign_wdot] = psi_time(OE,EROE,psi_min,psi_max,cb);
+    DeltaEROE = zeros(6,1);
+    switch min([t_dlam,t_diy,t_de,t_psi])
+        case t_dlam
+            t_prop = t_dlam;
+            times = [times, t+t_dlam];
+            flags = [flags, "dlam"];
+            STM = computeEccentricROE_STM(OE,cb.J2,cb.radius_m,cb.gravitationalParameter_m3_s2,t_dlam);
+            EROE = STM*EROE;
+            if sign_dlam == 1
+                DeltaEROE(2) = dlam_min - dlam_max;
+                EROE(2) = dlam_min;
+            else
+                DeltaEROE(2) = dlam_max - dlam_min;
+                EROE(2) = dlam_max;
+            end
+            % if sign_wdot == 1
+            %     DeltaEROE(3:4) = [de_min*cos(psi_min);de_min*sin(psi_min)] - EROE(3:4);
+            %     EROE(3:4) = [de_min*cos(psi_min);de_min*sin(psi_min)];
+            % else
+            %     DeltaEROE(3:4) = [de_min*cos(psi_max);de_min*sin(psi_max)] - EROE(3:4);
+            %     EROE(3:4) = [de_min*cos(psi_max);de_min*sin(psi_max)];
+            % end
+            [~,~,~,dv] = computeInPlaneManeuver(DeltaEROE,OE,cb.gravitationalParameter_m3_s2);
+            magnitudes = [magnitudes, dv];
+            OE = computeJ2meanPerturbation(OE,cb.gravitationalParameter_m3_s2,cb.J2,cb.radius_m)*t_dlam + OE;
+            t = t + t_dlam;
+        case t_diy
+            t_prop = t_diy;
+            times = [times, t+t_diy];
+            flags = [flags, "diy"];
+            STM = computeEccentricROE_STM(OE,cb.J2,cb.radius_m,cb.gravitationalParameter_m3_s2,t_diy);
+            EROE = STM*EROE;
+            if sign_diy == 1
+                DeltaEROE(6) = diy_min - diy_max;
+                EROE(5) = 0;
+                EROE(6) = diy_min;
+            else
+                DeltaEROE(6) = diy_max - diy_min;
+                EROE(5) = 0;
+                EROE(6) = diy_max;
+            end
+            [~,~,~,dv] = computeOutOfPlaneManeuver(DeltaEROE,OE,cb.gravitationalParameter_m3_s2);
+            magnitudes = [magnitudes, dv];
+            OE = computeJ2meanPerturbation(OE,cb.gravitationalParameter_m3_s2,cb.J2,cb.radius_m)*t_diy + OE;
+            t = t + t_diy;
+        case t_de
+            t_prop = t_de;
+            times = [times, t+t_de];
+            flags = [flags, "de"];
+            STM = computeEccentricROE_STM(OE,cb.J2,cb.radius_m,cb.gravitationalParameter_m3_s2,t_de);
+            EROE = STM*EROE;
+            % if sign_dlam == 1
+            %     DeltaEROE(2) = 0 - dlam_max;
+            %     EROE(2) = 0;
+            % else
+            %     DeltaEROE(2) = 0 - dlam_min;
+            %     EROE(2) = 0;
+            % end
+            de_mid = (de_min+de_max)/2;
+            if sign_wdot == 1
+                DeltaEROE(3:4) = [de_mid*cos(psi_min);de_mid*sin(psi_min)] - EROE(3:4);
+                EROE(3:4) = [de_mid*cos(psi_min);de_mid*sin(psi_min)];
+            else
+                DeltaEROE(3:4) = [de_mid*cos(psi_max);de_mid*sin(psi_max)] - EROE(3:4);
+                EROE(3:4) = [de_mid*cos(psi_max);de_mid*sin(psi_max)];
+            end
+            [~,~,~,dv] = computeInPlaneManeuver(DeltaEROE,OE,cb.gravitationalParameter_m3_s2);
+            magnitudes = [magnitudes, dv];
+            OE = computeJ2meanPerturbation(OE,cb.gravitationalParameter_m3_s2,cb.J2,cb.radius_m)*t_de + OE;
+            t = t + t_de;
+        case t_psi
+            t_prop = t_psi;
+            times = [times, t+t_psi];
+            flags = [flags, "psi"];
+            STM = computeEccentricROE_STM(OE,cb.J2,cb.radius_m,cb.gravitationalParameter_m3_s2,t_psi);
+            EROE = STM*EROE;
+            % if sign_dlam == 1
+            %     DeltaEROE(2) = 0 - dlam_max;
+            %     EROE(2) = 0;
+            % else
+            %     DeltaEROE(2) = 0 - dlam_min;
+            %     EROE(2) = 0;
+            % end
+            de_mid = (de_min+de_max)/2;
+            if sign_wdot == 1
+                DeltaEROE(3:4) = [de_mid*cos(psi_min);de_mid*sin(psi_min)] - EROE(3:4);
+                EROE(3:4) = [de_mid*cos(psi_min);de_mid*sin(psi_min)];
+            else
+                DeltaEROE(3:4) = [de_mid*cos(psi_max);de_mid*sin(psi_max)] - EROE(3:4);
+                EROE(3:4) = [de_mid*cos(psi_max);de_mid*sin(psi_max)];
+            end
+            [~,~,~,dv] = computeInPlaneManeuver(DeltaEROE,OE,cb.gravitationalParameter_m3_s2);
+            magnitudes = [magnitudes, dv];
+            OE = computeJ2meanPerturbation(OE,cb.gravitationalParameter_m3_s2,cb.J2,cb.radius_m)*t_psi + OE;
+            t = t + t_psi;
+        otherwise
+            throw("Error: Time propagation does not match a maneuver case.")
+    end
+    dt = 100;
+    SunOE = [
+        telem.("Sun OE.semiMajorAxis_m")(1); 
+        telem.("Sun OE.eccentricity")(1); 
+        telem.("Sun OE.inclination_rad")(1); 
+        telem.("Sun OE.longitudeAscendingNode_rad")(1); 
+        telem.("Sun OE.argumentPerigee_rad")(1); 
+        telem.("Sun OE.MeanAnomaly_rad")(1)
+    ];
+    for t_int = 1:dt:t_prop
+        EROE_prop = propJ2plusSRP_single(OE_prev,EROE_prev,SunOE,cb.J2,cb.radius_m,cb.gravitationalParameter_m3_s2,constants,dB,t_int);
+        EROE_out = [EROE_out, EROE_prop];
+    end
+    disp(flags(end))
+    % EROE_out = [EROE_out, EROE];
+end
+end
+

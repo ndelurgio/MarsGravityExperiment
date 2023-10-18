@@ -1,0 +1,28 @@
+function [dv_out, command_complete] = command(M_cmd,dv_cmd,OE, new_cmd, EROE, mu)
+persistent M_prev cmd_idx command_complete_prev
+if isempty(cmd_idx) || isempty(M_prev) || isempty(command_complete_prev)
+    M_prev = 2*pi;
+    cmd_idx = 1;
+    command_complete_prev = 0;
+end
+if new_cmd
+    cmd_idx = 1;
+end
+M_curr = OE(6);
+dv_out = [0;0;0];
+if cmd_idx <= length(M_cmd) && M_prev < mod(M_cmd(cmd_idx),2*pi) && M_curr > mod(M_cmd(cmd_idx),2*pi)
+    dv_out(1:3,1) = dv_cmd(cmd_idx,:)';
+    cmd_idx = cmd_idx + 1;
+end
+command_complete = 0;
+if cmd_idx == 4
+    command_complete = 1;
+end
+if command_complete_prev && abs(EROE(1)) > 0.05/OE(1) && abs(EROE(1)) < 2/OE(1) && 
+    Gamma = getEROEControlMatrix(OE,mu);
+    dv_out(1:3,1) = [0;-EROE(1)/Gamma(1,2);0]/2;
+end
+M_prev = M_curr;
+command_complete_prev = command_complete;
+end
+
